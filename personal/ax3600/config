@@ -87,3 +87,18 @@ CONFIG_PACKAGE_luci-i18n-sqm-zh-cn=y
 CONFIG_PACKAGE_luci-i18n-ddns-zh-cn=y
 CONFIG_PACKAGE_luci-i18n-pbr-zh-cn=y
 CONFIG_PACKAGE_luci-i18n-bcp38-zh-cn=y
+
+# --- HomeKit gateway ------------------------------------------------------
+# No symbols: homekit-go is deliberately not baked into the image.
+#
+# It is a static ARM64 binary that deploy.ps1 pushes over SSH along with its
+# LuCI page, init script, uci-defaults and config. A copy here would only go
+# stale against the one the deploy installs, and the deploy is idempotent, so
+# running it after a flash costs nothing.
+#
+# Nothing has to be added for it to work once deployed. Its LuCI page needs
+# only what luci-base already pulls in: rpcd, rpcd-mod-luci (the luci object
+# behind getInitList/getInitAction/setInitAction) and rpcd-mod-file (the ubus
+# file object the page runs "homekit-go ctl" through). The daemon is static so
+# it needs no libraries, and remote-deploy.sh only uses busybox applets this
+# image has.
