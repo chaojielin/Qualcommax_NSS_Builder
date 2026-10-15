@@ -84,24 +84,28 @@ CONFIG_PACKAGE_luci-app-ddns=y
 CONFIG_PACKAGE_ddns-scripts-cloudflare=y
 
 # --- Chinese UI -----------------------------------------------------------
-# luci-base plus a translation for every LuCI app this image carries that has
-# a zh_Hans catalog upstream. LuCI's luci.main.lang defaults to auto, so a
-# Chinese browser picks these up with no further configuration. Spelled out
-# one by one rather than through CONFIG_LUCI_LANG_zh_Hans so that
-# prepare-build.sh's symbol gate can see each of them.
+# luci-base plus the Simplified Chinese translations. LuCI's luci.main.lang
+# defaults to auto, so a Chinese browser picks these up with no further
+# configuration.
+#
+# Selected through LUCI_LANG_zh_Hans, not by naming the individual
+# luci-i18n-*-zh-cn packages. Those packages are HIDDEN:=1 in luci.mk, and
+# scripts/package-metadata.pl emits a hidden package with an empty prompt
+# ("tristate" with no title) and skips the usual "default m if ALL" for it.
+# A promptless symbol is not user-settable: an explicit
+# CONFIG_PACKAGE_luci-i18n-base-zh-cn=y in this fragment is recomputed away
+# by defconfig, and the symbol gate then fails on all of them. Their only
+# value source is DEFAULT:=LUCI_LANG_zh_Hans||(ALL&&m), which is what this
+# symbol feeds, so setting it here is the supported way in.
+#
+# The effect is one translation per enabled LuCI app that ships a po/zh_Hans
+# catalog - the same set the per-package lines used to name, plus anything
+# else the image grows later.
 #
 # Deliberately absent: luci-app-openclash is not in the image at all (see
 # above) and compiles its Chinese strings into the package itself anyway;
 # luci-app-ppe-qos and luci-proto-wireguard have no zh_Hans catalog upstream.
-# luci-app-sqm is already in devices/common/config, so only its translation
-# is added here.
-CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
-CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
-CONFIG_PACKAGE_luci-i18n-sqm-zh-cn=y
-CONFIG_PACKAGE_luci-i18n-ddns-zh-cn=y
-CONFIG_PACKAGE_luci-i18n-pbr-zh-cn=y
-CONFIG_PACKAGE_luci-i18n-bcp38-zh-cn=y
+CONFIG_LUCI_LANG_zh_Hans=y
 
 # --- HomeKit gateway ------------------------------------------------------
 # No symbols: homekit-go is deliberately not baked into the image.
