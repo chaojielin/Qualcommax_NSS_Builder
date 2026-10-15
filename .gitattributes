@@ -10,3 +10,8 @@ config  text eol=lf
 # uci-defaults are POSIX shell scripts even without a .sh extension.
 # files* covers the variant overlay dir (files.ppe-nss/) too.
 devices/*/files*/etc/uci-defaults/* text eol=lf
+
+# The personal AX3600 overlay is not under devices/, so it needs its own rule:
+# these run on the router, where ash parses a CR as part of the line.
+personal/*/files/etc/uci-defaults/* text eol=lf
+personal/*/files/etc/init.d/* text eol=lf

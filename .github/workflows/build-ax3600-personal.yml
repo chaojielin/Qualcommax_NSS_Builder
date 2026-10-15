@@ -1,0 +1,214 @@
+name: Build AX3600 Personal
+
+# Builds one image: the Xiaomi AX3600 with the personal AX3600 fragment and
+# overlay on top of the standard ppe-nss variant. Differences from build.yml:
+#   - devices: xiaomi_ax3600 only, default flavour only
+#   - CONFIG_FRAGMENT: personal/ax3600/config.workflow, on top of the device config
+#   - an extra overlay step for personal/ax3600/files
+#   - its own release prefix, so it never touches the upstream Build releases
+# Manual only: the fragment and overlay are edited far more often than the
+# per-group configuration build.yml tracks, and a push-triggered build here
+# would fire for every unrelated devices/ change.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-ax3600-personal-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: JuliusBairaktaris/openwrt-ppe-nss
+  UPSTREAM_REF: ppe-nss
+  NSS_REPO: JuliusBairaktaris/nss-packages
+  NSS_REF: edma-nss
+  # VARIANT picks files.<variant> and patches/tree/<variant>; the personal
+  # image is the standard ppe-nss line, so it shares both with build.yml.
+  VARIANT: ppe-nss
+  RELEASE_PREFIX: ax3600-personal-ppe-nss
+  FEEDS: |
+    src-git nss https://github.com/JuliusBairaktaris/nss-packages.git;edma-nss
+    src-git luci https://github.com/JuliusBairaktaris/luci.git;luci-app-ppe-qos
+    src-git passwall https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main
+    src-git openclash https://github.com/vernesong/OpenClash.git;master
+
+jobs:
+  check:
+    name: Resolve OpenWrt and NSS sources
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      EVENT_NAME: ${{ github.event_name }}
+    outputs:
+      upstream_sha: ${{ steps.check.outputs.upstream_sha }}
+      nss_sha: ${{ steps.check.outputs.nss_sha }}
+      need: ${{ steps.check.outputs.need }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: bash scripts/check-updates.sh
+
+  build:
+    name: Build Xiaomi AX3600 (PPE/NSS)
+    needs: check
+    if: needs.check.outputs.need == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEVICE: xiaomi_ax3600
+      BUILDER_REPO: ${{ github.workspace }}/builder
+      OPENWRT_DIR: ${{ github.workspace }}/openwrt
+      CONFIG_FRAGMENT: personal/ax3600/config.workflow
+    steps:
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update || true
+          sudo apt-get install -y bzip2 g++ gawk gcc glibc-source libncurses-dev make rsync
+
+      - name: Checkout OpenWrt source
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ needs.check.outputs.upstream_sha }}
+          fetch-depth: 0
+          path: openwrt
+
+      - name: Checkout builder repo
+        uses: actions/checkout@v7
+        with:
+          path: builder
+
+      # prepare-build.sh only reads files that exist in the checkout, and the
+      # fragment is what build.yml uses for the mesh flavour, so the personal
+      # one is materialised here rather than committed under a name the shared
+      # script might pick up by accident.
+      - name: Assemble personal config fragment
+        working-directory: builder
+        run: |
+          set -euo pipefail
+          cat personal/ax3600/config > personal/ax3600/config.workflow
+
+      - name: Prepare build environment
+        env:
+          VARIANT: ${{ env.VARIANT }}
+          DEVICE: ${{ env.DEVICE }}
+          CONFIG_FRAGMENT: ${{ env.CONFIG_FRAGMENT }}
+          FEEDS: ${{ env.FEEDS }}
+        run: bash builder/scripts/prepare-build.sh
+
+      # Not part of prepare-build.sh's overlay chain: that walks devices/, and
+      # this overlay belongs to the personal line only.
+      - name: Add personal AX3600 overlay
+        run: rsync -a builder/personal/ax3600/files/ openwrt/files/
+
+      - name: Set reproducible-build env
+        working-directory: openwrt
+        run: |
+          set -euo pipefail
+          {
+            echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)"
+            echo "TZ=UTC"
+            echo "LC_ALL=C"
+            echo "KBUILD_BUILD_USER=builder"
+            echo "KBUILD_BUILD_HOST=github"
+          } >>"$GITHUB_ENV"
+
+      - name: Restore sources
+        uses: actions/cache/restore@v6
+        with:
+          path: openwrt/dl
+          key: dl-${{ github.run_id }}
+          restore-keys: dl-
+
+      - name: Download sources
+        id: download
+        working-directory: openwrt
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          before=$(find dl -maxdepth 1 -type f | wc -l)
+          for attempt in 1 2 3; do
+            make download -j"$(nproc)" V=s && break
+            echo "Download attempt $attempt failed; retrying..."
+            sleep 5
+          done
+          echo "grew=$(($(find dl -maxdepth 1 -type f | wc -l) > before))" >>"$GITHUB_OUTPUT"
+
+      - name: Save sources
+        if: steps.download.outputs.grew == 1
+        uses: actions/cache/save@v6
+        with:
+          path: openwrt/dl
+          key: dl-${{ github.run_id }}
+
+      - name: Compute ccache key
+        id: ccache
+        run: |
+          set -euo pipefail
+          tree=$(git -C openwrt rev-parse HEAD:toolchain)
+          sum=$({
+            echo "$tree"
+            grep -E '^CONFIG_(BINUTILS|GCC|LIBC|MUSL|GLIBC)_' openwrt/.config
+            gcc --version; as --version
+          } | sha256sum | cut -c1-16)
+          echo "key=ax3600-ccache-$sum-${{ github.run_id }}" >>"$GITHUB_OUTPUT"
+          echo "prefix=ax3600-ccache-$sum-" >>"$GITHUB_OUTPUT"
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: openwrt/.ccache
+          key: ${{ steps.ccache.outputs.key }}
+          restore-keys: ${{ steps.ccache.outputs.prefix }}
+
+      - name: Build firmware
+        working-directory: openwrt
+        env:
+          CCACHE_COMPILERCHECK: content
+          CCACHE_MAXSIZE: 4G
+        run: |
+          set -euo pipefail
+          make -j"$(nproc)" || make -j1 V=s
+          staging_dir/host/bin/ccache -s
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: openwrt/.ccache
+          key: ${{ steps.ccache.outputs.key }}
+
+      # Published straight to a finished release rather than the draft ->
+      # build -> publish sequence build.yml uses: there is one image here, so
+      # a half-built release is not a state that needs guarding against.
+      - name: Create and publish AX3600 release
+        working-directory: builder
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_SHA: ${{ needs.check.outputs.upstream_sha }}
+          NSS_SHA: ${{ needs.check.outputs.nss_sha }}
+        run: |
+          set -euo pipefail
+          target_root=../openwrt/bin/targets
+          [[ -d "$target_root" ]] || { echo "OpenWrt target directory not found: $target_root"; exit 1; }
+          out=$(dirname "$(find "$target_root" -type f -name sha256sums -print -quit)")
+          mapfile -t assets < <(find "$out" -maxdepth 1 -type f -name 'openwrt-*-xiaomi_ax3600-squashfs-sysupgrade.bin')
+          [[ ${#assets[@]} -eq 1 ]] || { echo "Expected one AX3600 sysupgrade image, found ${#assets[@]}"; exit 1; }
+          grep 'xiaomi_ax3600.*sysupgrade.bin' "$out/sha256sums" > sha256sums-xiaomi_ax3600.txt
+          cp "$out/config.buildinfo" config-xiaomi_ax3600.buildinfo
+          stamp=$(date -u +%Y%m%dT%H%M%SZ)
+          tag="${RELEASE_PREFIX}-${stamp}-${GITHUB_RUN_ID}"
+          printf 'Personal Xiaomi AX3600 firmware.\n\n- Variant: %s\n- Flavour: standard PPE/NSS\n- OpenWrt: %s\n- NSS: %s\n- Image: xiaomi_ax3600 squashfs sysupgrade\n\nIncludes sing-box, HomeKit Go, OpenClash dependencies, and Cloudflare WARP/PBR dependencies. %s\n\nThis is a sysupgrade image for an existing OpenWrt installation; it is not a stock factory image.\n' \
+            "$VARIANT" "$UPSTREAM_SHA" "$NSS_SHA" "NSS firmware 12.5 standard build." > release-notes.md
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --title "AX3600 Personal PPE-NSS $stamp" --notes-file release-notes.md
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}" sha256sums-xiaomi_ax3600.txt config-xiaomi_ax3600.buildinfo
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+          echo "Published [$tag](https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag)" >> "$GITHUB_STEP_SUMMARY"

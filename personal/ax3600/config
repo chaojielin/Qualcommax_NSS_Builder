@@ -1,0 +1,61 @@
+# Extra packages for the personal AX3600 image. This fragment is only read by
+# build-ax3600-personal.yml; the upstream Build workflow never selects it.
+CONFIG_PACKAGE_sing-box=y
+CONFIG_PACKAGE_kmod-inet-diag=y
+CONFIG_PACKAGE_kmod-tun=y
+
+CONFIG_PACKAGE_wireguard-tools=y
+CONFIG_PACKAGE_luci-proto-wireguard=y
+CONFIG_PACKAGE_pbr=y
+CONFIG_PACKAGE_luci-app-pbr=y
+CONFIG_PACKAGE_chinadns-ng=y
+CONFIG_PACKAGE_dnsmasq-full=y
+CONFIG_PACKAGE_dnsmasq_full_nftset=y
+
+CONFIG_PACKAGE_rpcd-mod-file=y
+CONFIG_PACKAGE_ca-bundle=y
+CONFIG_PACKAGE_jsonfilter=y
+CONFIG_PACKAGE_ip-full=y
+CONFIG_PACKAGE_openssl-util=y
+CONFIG_PACKAGE_tcpdump=y
+
+CONFIG_PACKAGE_luci-app-openclash=y
+CONFIG_PACKAGE_bash=y
+CONFIG_PACKAGE_ruby=y
+CONFIG_PACKAGE_ruby-yaml=y
+CONFIG_PACKAGE_unzip=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_firewall4=y
+CONFIG_PACKAGE_nftables-json=y
+CONFIG_PACKAGE_kmod-nft-tproxy=y
+CONFIG_PACKAGE_dnsmasq=n
+
+# --- busybox applets ------------------------------------------------------
+# CONFIG_BUSYBOX_CUSTOM is a prerequisite rather than a preference: the
+# CONFIG_BUSYBOX_CONFIG_* symbols are only sourced while it is on, so without
+# it Kconfig drops every applet line below and prepare-build.sh fails the
+# symbol gate. Switching it on changes no applet by itself - each
+# BUSYBOX_CONFIG_* defaults to the matching BUSYBOX_DEFAULT_*, and all 1047 of
+# them have one.
+#
+# Only applets OpenWrt ships switched off are listed. nohup is the one with
+# history here: a long-running command backgrounded over ssh dies with the
+# session without it, and does so silently, which has already cost a
+# debugging round.
+CONFIG_BUSYBOX_CUSTOM=y
+CONFIG_BUSYBOX_CONFIG_BASE64=y
+CONFIG_BUSYBOX_CONFIG_NOHUP=y
+CONFIG_BUSYBOX_CONFIG_STAT=y
+CONFIG_BUSYBOX_CONFIG_TAC=y
+
+# --- socket statistics ----------------------------------------------------
+# kmod-inet-diag is already in for sing-box, but ss is not a busybox applet
+# and ip-full does not carry it, so the user-space half was missing.
+CONFIG_PACKAGE_ss=y
+
+# --- memory and queueing --------------------------------------------------
+# 512 MB running mihomo, sing-box and homekit-go. Both of these are kernel
+# modules, which cannot be added later against a different vermagic, so they
+# have to be baked in even if they are only wanted occasionally.
+CONFIG_PACKAGE_zram-swap=y
+CONFIG_PACKAGE_kmod-sched-cake=y

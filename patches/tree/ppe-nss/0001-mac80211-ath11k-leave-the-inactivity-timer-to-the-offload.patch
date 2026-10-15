@@ -1,0 +1,92 @@
+From 48b86c0e089f7285ff3509019d21ad8be1910c82 Mon Sep 17 00:00:00 2001
+From: chaojielin <u.s.chaojielim@gmail.com>
+Date: Thu, 15 Oct 2026 10:53:28 -0400
+Subject: [PATCH] mac80211: ath11k: leave the inactivity timer to the offloaded
+ data path
+
+The NSS firmware delivers received data frames straight to the Ethernet node,
+so mac80211 never sees the RX that would keep a station's last_rx current.
+ath11k reports that frozen value as the station's inactive time, hostapd
+compares it against ap_max_inactivity, and every client is disconnected on that
+cycle - the 300-second kick that fills logread with "disassociated due to
+inactivity" on an AX3600.
+
+The timer is armed in exactly two places, hostapd_new_assoc_sta() and
+ap_sta_add(), and both are guarded by WPA_DRIVER_FLAGS_INACTIVITY_TIMER. That
+flag is set from the wiphy's NL80211_FEATURE_INACTIVITY_TIMER, so advertising
+the feature here makes hostapd skip the timer entirely while the hardware
+offload stays on, which raising ap_max_inactivity only postpones.
+
+Nothing frees an idle station afterwards. That is deliberate: with the data
+path off the host, "inactive" is an artefact of the offload rather than a fact
+about the client, so keeping the association is the more accurate reading, and
+a station that really leaves is removed by its own deauthentication.
+
+The bit is only set while ab->nss_offload is on, so a radio running the normal
+host data path keeps hostapd's timer and its usual idle-station cleanup.
+
+Signed-off-by: chaojielin <u.s.chaojielim@gmail.com>
+---
+ ...-the-inactivity-timer-to-the-offload.patch | 50 +++++++++++++++++++
+ 1 file changed, 50 insertions(+)
+ create mode 100644 package/kernel/mac80211/patches/nss-wifi/910-ath11k-leave-the-inactivity-timer-to-the-offload.patch
+
+diff --git a/package/kernel/mac80211/patches/nss-wifi/910-ath11k-leave-the-inactivity-timer-to-the-offload.patch b/package/kernel/mac80211/patches/nss-wifi/910-ath11k-leave-the-inactivity-timer-to-the-offload.patch
+new file mode 100644
+index 0000000..3945574
+--- /dev/null
++++ b/package/kernel/mac80211/patches/nss-wifi/910-ath11k-leave-the-inactivity-timer-to-the-offload.patch
+@@ -0,0 +1,50 @@
++From: chaojielin <u.s.chaojielim@gmail.com>
++Date: Thu, 15 Oct 2026 10:53:25 -0400
++Subject: [PATCH] ath11k: leave the inactivity timer to the offloaded data path
++
++The NSS firmware delivers received data frames straight to the Ethernet node,
++so mac80211 never sees the RX that would keep a station's last_rx current.
++ath11k reports that frozen value as the station's inactive time, hostapd
++compares it against ap_max_inactivity, and every client is disconnected on that
++cycle - the 300-second kick that fills logread with "disassociated due to
++inactivity" on an AX3600.
++
++The timer is armed in exactly two places, hostapd_new_assoc_sta() and
++ap_sta_add(), and both are guarded by WPA_DRIVER_FLAGS_INACTIVITY_TIMER. That
++flag is set from the wiphy's NL80211_FEATURE_INACTIVITY_TIMER, so advertising
++the feature here makes hostapd skip the timer entirely while the hardware
++offload stays on, which raising ap_max_inactivity only postpones.
++
++Nothing frees an idle station afterwards. That is deliberate: with the data
++path off the host, "inactive" is an artefact of the offload rather than a fact
++about the client, so keeping the association is the more accurate reading, and
++a station that really leaves is removed by its own deauthentication.
++
++The bit is only set while ab->nss_offload is on, so a radio running the normal
++host data path keeps hostapd's timer and its usual idle-station cleanup.
++
++Signed-off-by: chaojielin <u.s.chaojielim@gmail.com>
++---
++Index: backports-7.2/drivers/net/wireless/ath/ath11k/mac.c
++===================================================================
++--- backports-7.2.orig/drivers/net/wireless/ath/ath11k/mac.c
+++++ backports-7.2/drivers/net/wireless/ath/ath11k/mac.c
++@@ -11019,6 +11019,18 @@ static int __ath11k_mac_register(struct ath11k *ar)
++ 
++ 			wiphy->ext_features[ft / 8] &= ~BIT(ft % 8);
++ 		}
+++
+++		/* The NSS firmware hands received data frames straight to the
+++		 * Ethernet node, so mac80211 never sees the RX that keeps a
+++		 * station's last_rx current. hostapd reads that frozen value as
+++		 * inactivity and disconnects every client on the
+++		 * ap_max_inactivity cycle. Claiming this feature makes hostapd
+++		 * leave the inactivity timer alone; nothing frees an idle station
+++		 * afterwards, which is deliberate, because on this target "idle"
+++		 * is an artefact of the offload rather than a fact about the
+++		 * client.
+++		 */
+++		wiphy->features |= NL80211_FEATURE_INACTIVITY_TIMER;
++ 	}
++ 
++ 	ret = ieee80211_register_hw(ar->hw);
+-- 
+2.55.0.windows.3
+
