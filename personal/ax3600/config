@@ -19,7 +19,22 @@ CONFIG_PACKAGE_ip-full=y
 CONFIG_PACKAGE_openssl-util=y
 CONFIG_PACKAGE_tcpdump=y
 
-CONFIG_PACKAGE_luci-app-openclash=y
+# --- OpenClash dependencies, without OpenClash ----------------------------
+# luci-app-openclash is deliberately NOT selected. It is PKGARCH:=all (plain
+# Lua plus static assets), so it can be installed at any time from a matching
+# .ipk; its kernel-module dependencies cannot, because a module built against
+# another kernel's vermagic will not load. Shipping the dependencies alone
+# keeps that door open without carrying an app that is not in use.
+#
+# Everything the package declares is kept. From its DEPENDS:
+#   +dnsmasq-full +bash +curl +ca-bundle +ip-full
+#   +ruby +ruby-yaml +kmod-tun +unzip
+# and from its Kconfig block:
+#   +luci-compat +kmod-inet-diag  (both conditioned on PACKAGE_luci-app-openclash)
+#   +kmod-nft-tproxy +dnsmasq_full_nftset  (conditioned on PACKAGE_firewall4,
+#     so they stay on regardless; the iptables/ipset alternatives are the
+#     !firewall4 branch and never apply here)
+# curl comes in with devices/common/config, and kmod-tun with both.
 CONFIG_PACKAGE_bash=y
 CONFIG_PACKAGE_ruby=y
 CONFIG_PACKAGE_ruby-yaml=y
@@ -75,8 +90,8 @@ CONFIG_PACKAGE_ddns-scripts-cloudflare=y
 # one by one rather than through CONFIG_LUCI_LANG_zh_Hans so that
 # prepare-build.sh's symbol gate can see each of them.
 #
-# Deliberately absent: luci-app-openclash compiles its Chinese strings into
-# the package itself and has no separate translation package;
+# Deliberately absent: luci-app-openclash is not in the image at all (see
+# above) and compiles its Chinese strings into the package itself anyway;
 # luci-app-ppe-qos and luci-proto-wireguard have no zh_Hans catalog upstream.
 # luci-app-sqm is already in devices/common/config, so only its translation
 # is added here.
