@@ -59,3 +59,31 @@ CONFIG_PACKAGE_ss=y
 # have to be baked in even if they are only wanted occasionally.
 CONFIG_PACKAGE_zram-swap=y
 CONFIG_PACKAGE_kmod-sched-cake=y
+
+# --- DDNS -----------------------------------------------------------------
+# luci-app-ddns with the Cloudflare provider, so the router keeps its own A
+# record current. luci-app-ddns pulls ddns-scripts and ucode-mod-math;
+# ddns-scripts pulls resolveip, ddns-scripts-services and ip. curl is already
+# in.
+CONFIG_PACKAGE_luci-app-ddns=y
+CONFIG_PACKAGE_ddns-scripts-cloudflare=y
+
+# --- Chinese UI -----------------------------------------------------------
+# luci-base plus a translation for every LuCI app this image carries that has
+# a zh_Hans catalog upstream. LuCI's luci.main.lang defaults to auto, so a
+# Chinese browser picks these up with no further configuration. Spelled out
+# one by one rather than through CONFIG_LUCI_LANG_zh_Hans so that
+# prepare-build.sh's symbol gate can see each of them.
+#
+# Deliberately absent: luci-app-openclash compiles its Chinese strings into
+# the package itself and has no separate translation package;
+# luci-app-ppe-qos and luci-proto-wireguard have no zh_Hans catalog upstream.
+# luci-app-sqm is already in devices/common/config, so only its translation
+# is added here.
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-sqm-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-ddns-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-pbr-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-bcp38-zh-cn=y
