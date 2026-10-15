@@ -7,10 +7,20 @@
 # which stops hostapd arming its inactivity timer at all - raising the timeout
 # only postpones the same disconnect.
 #
-# ap_max_inactivity still has to stay large: hostapd derives the advertised
-# BSS Max Idle Period from it, and at the 300-second default the AP asks every
-# client to go away after five minutes, which is the same kick arriving from
-# the other end.
+# max_inactivity is deliberately left alone. hostapd.sh only emits
+# ap_max_inactivity when the value is greater than 0, so not setting the option
+# means hostapd.conf gets no ap_max_inactivity line at all and hostapd falls
+# back to its own 300-second default - not to a zero-second timer.
+#
+# The value no longer decides anything either way, because the driver patch
+# stops hostapd arming ap_handle_timer in the first place: both places that
+# register it, ap_sta_add() in sta_info.c and hostapd_new_assoc_sta() in
+# hostapd.c, are guarded by WPA_DRIVER_FLAGS_INACTIVITY_TIMER.
+#
+# Running at the default also turns the patch into its own test: if a station
+# is still logged as "disassociated due to inactivity" now, the patch is not
+# taking effect, because nothing else produces that message on a 300-second
+# timeout. Raising max_inactivity would only hide that again.
 #
 # disassoc_low_ack is off for the same reason as the inactivity timer: with
 # the data path in the firmware the host does not see the ACKs either, so
@@ -22,8 +32,6 @@
 #
 # Enable both bands as an open AP for initial setup; replace this with a
 # secured network and set the router admin password immediately after login.
-uci -q set wireless.default_radio0.max_inactivity='86400'
-uci -q set wireless.default_radio1.max_inactivity='86400'
 uci -q set wireless.default_radio0.ieee80211k='0'
 uci -q set wireless.default_radio1.ieee80211k='0'
 uci -q set wireless.default_radio0.bss_transition='0'
